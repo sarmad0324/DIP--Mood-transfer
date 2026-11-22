@@ -1,0 +1,22 @@
+{
+  "content": {
+    "arezzo_piazza": "ct_country/cand_004.jpg",
+    "autumn_hills": "mist/cand_003.jpg",
+    "city_skyline": "golden/cand_001.jpg",
+    "forest_lake": "mist/cand_002.jpg",
+    "las_vegas_street": "night/cand_000.jpg",
+    "lucca_rooftops": "ct_country/cand_001.jpg",
+    "caesars_palace": "night/cand_005.jpg",
+    "matterhorn": "ct_mount/cand_001.jpg",
+    "niagara_falls": "mist/cand_000.jpg",
+    "tuscan_vineyard": "ct_country/cand_002.jpg"
+  },
+  "moods": {
+    "golden_hour": "golden/cand_005.jpg",
+    "blue_dusk": "blue/cand_001.jpg",
+    "foggy": "fog/cand_000.jpg",
+    "neon_night": "neon/cand_004.jpg",
+    "vintage_film": "neon/cand_005.jpg",
+    "dark_noir": "noir/cand_005.jpg"
+  }
+}

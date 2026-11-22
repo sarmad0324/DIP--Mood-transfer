@@ -1,0 +1,962 @@
+<!doctype html><html><head><meta charset='utf-8'><title>report</title><style>
+@page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+body { font-family: "Charter", "Georgia", "Times New Roman", serif; font-size: 10.5pt; line-height: 1.45;
+       color: #111; max-width: 180mm; margin: auto; }
+h1 { font-size: 20pt; text-align: center; margin-bottom: 4pt; }
+h2 { font-size: 14pt; border-bottom: 1px solid #999; padding-bottom: 2pt; margin-top: 18pt; page-break-after: avoid; }
+h3 { font-size: 11.5pt; margin-top: 12pt; page-break-after: avoid; }
+p, li { text-align: justify; }
+code { font-family: "Menlo", "Consolas", monospace; font-size: 8.8pt; background: #f3f3f3; padding: 0 2px; }
+pre { background: #f6f6f6; border: 1px solid #ddd; padding: 6pt; font-size: 8.6pt; overflow-x: auto;
+      white-space: pre-wrap; page-break-inside: avoid; }
+table { border-collapse: collapse; margin: 8pt auto; font-size: 8.3pt; page-break-inside: avoid; }
+th, td { border: 1px solid #bbb; padding: 2pt 4pt; text-align: center; }
+th { background: #eee; }
+img { max-width: 100%; display: block; margin: 6pt auto; page-break-inside: avoid; }
+blockquote { color: #444; border-left: 3px solid #ccc; margin-left: 0; padding-left: 8pt; }
+.caption, em.caption { display: block; text-align: center; font-size: 9pt; color: #333; }
+</style></head><body><h1 id="mood-transfer-using-deep-learning-to-transfer-the-mood-of-one-image-to-another">Mood Transfer: Using Deep Learning to Transfer the Mood of One Image to Another</h1>
+<p><strong>Digital Image Processing — Semester Project Report</strong></p>
+<hr />
+<h2 id="abstract">Abstract</h2>
+<p>We present a system that re-renders a <em>content</em> photograph with the <strong>mood</strong> (colour palette, tone,
+lighting and atmosphere) of a <em>reference</em> photograph while preserving the content's structure. The deep
+learning core is a pretrained VGG-19 feature space used in two ways: optimisation-based neural transfer
+(Gatys et al.) and fast feed-forward Adaptive Instance Normalisation (AdaIN, Huang &amp; Belongie). Plain
+neural style transfer paints textures onto photographs, which conflicts with the goal of a
+photographic result. We therefore add a <em>mood layer</em> built from classical DIP tools: luminance-preserving
+transfer modes in CIELab, a photorealistic refinement step based on a colour guided filter that uses the
+content image as guide, mood descriptors (Lab k-means palette, brightness, contrast, saturation,
+correlated colour temperature), presets, multi-reference blending, post-processing and an optional
+semantic (DeepLabV3) foreground/background mode. Classical baselines (Reinhard colour transfer, CDF
+histogram matching) are implemented from scratch. We evaluate five methods on 10 content images ×
+6 moods with SSIM, LPIPS, Lab statistics, Wasserstein and Bhattacharyya histogram distances, CLIP
+similarity and runtime. Our default pipeline (AdaIN + colour-only mode + guided-filter refinement)
+preserves structure almost perfectly (luminance SSIM 0.996, LPIPS 0.006, vs. 0.331 / 0.477 for plain
+AdaIN). It halves the colour-statistics distance to the reference and matches CLIP mood descriptions
+as well as Reinhard, at ~0.1 s per 512 px image on a laptop GPU (≈200× faster than Gatys). A
+colour+tone mode trades some SSIM for the strongest text-described mood match of all methods (ΔCLIP
+0.108).</p>
+<hr />
+<h2 id="1-introduction">1. Introduction</h2>
+<h3 id="11-what-is-mood-in-an-image">1.1 What is "mood" in an image?</h3>
+<p>Photographers and film colourists talk about the <em>mood</em> or <em>atmosphere</em> of an image: the warm, low sun of
+golden hour, the cold blue of dusk, the low-contrast greys of fog, the saturated magenta–cyan of neon
+night, the faded, shifted colours of old film stock, or the dark, high-contrast look of film noir. These
+impressions are carried mostly by <strong>global photometric properties</strong>:</p>
+<ul>
+<li><strong>colour palette and colour temperature</strong> (warm ↔ cool white balance, dominant hues),</li>
+<li><strong>tone</strong>: overall brightness (low-key/high-key) and contrast (the tone curve),</li>
+<li><strong>saturation / colourfulness</strong>,</li>
+<li><strong>lighting and haze</strong> (the spatial distribution of brightness, glow, veiling light).</li>
+</ul>
+<p>Artistic style, in contrast, also includes <strong>texture</strong>: brush strokes, canvas, patterns. For photographs,
+transferring texture is usually <em>undesirable</em>: the output should still look like a photograph.</p>
+<h3 id="12-problem-statement">1.2 Problem statement</h3>
+<p>Given a content image <strong>A</strong> and a mood/reference image <strong>B</strong>, produce an image that</p>
+<ol>
+<li>has the colour, tone and atmosphere of <strong>B</strong>,</li>
+<li>preserves the structure, edges and objects of <strong>A</strong> (recognisable, with no warped edges),</li>
+<li>contains no unpleasant artefacts (painterly textures, halos, colour blotches), and</li>
+<li>is produced with deep learning as the core method, quickly enough for interactive use.</li>
+</ol>
+<h3 id="13-contributions">1.3 Contributions</h3>
+<ul>
+<li>A complete, modular implementation of <strong>four families of methods</strong>: classical Reinhard and histogram
+  matching (from scratch), Gatys optimisation, AdaIN feed-forward transfer, and <strong>AdaIN + mood
+  enhancements</strong>, our photographic pipeline.</li>
+<li>A <strong>mood layer</strong> that separates colour, tone and texture: four transfer modes, guided-filter
+  photorealistic refinement, mood descriptors and presets, multi-reference blending, post-processing and
+  semantic foreground/background transfer.</li>
+<li>A quantitative evaluation on 60 content–mood pairs with seven metrics plus runtime, and qualitative
+  studies (α sweep, modes, refinement, blending, failure cases).</li>
+<li>A CLI with batch mode, a Gradio GUI, tests, and a reproducible experiment script.</li>
+</ul>
+<hr />
+<h2 id="2-related-work">2. Related Work</h2>
+<p><strong>Statistical colour transfer.</strong> Reinhard et al. [1] transfer colour by matching the mean and standard
+deviation of each channel in the decorrelated lαβ opponent colour space. Histogram specification
+(matching full channel distributions via their cumulative distribution functions) is a textbook DIP
+technique [16]. Pitié et al. [22] extended this to N-dimensional PDF transfer. These methods are fast and
+structure-preserving but blind to spatial and semantic content.</p>
+<p><strong>Optimisation-based neural style transfer.</strong> Gatys et al. [2] showed that deep features of an
+ImageNet-trained VGG network [8] separate content (feature maps of a deep layer) from style (Gram
+matrices of feature maps across layers). An output image is obtained by optimising its pixels to match
+both. Li et al. [19] showed that Gram matching is equivalent to minimising a Maximum Mean Discrepancy
+between feature distributions, which motivates matching simpler feature statistics.</p>
+<p><strong>Fast feed-forward transfer.</strong> Johnson et al. [4] trained a feed-forward network per style with
+perceptual losses for real-time transfer. Ulyanov et al. [20] showed that instance normalisation
+improves stylisation. Huang &amp; Belongie [3] proposed <strong>Adaptive Instance Normalisation (AdaIN)</strong>: aligning
+the channel-wise mean and variance of content features to those of the style features, followed by a
+learned decoder. This gives <em>arbitrary</em> style transfer in a single forward pass.</p>
+<p><strong>Photorealistic style transfer.</strong> Luan et al. [5] (Deep Photo Style Transfer) add a photorealism
+regulariser that constrains the transformation to be <em>locally affine in colour space</em> (based on the
+Matting Laplacian), plus semantic segmentation to avoid content mismatches. Li et al. [6] (PhotoWCT)
+replace the decoder's upsampling with unpooling and add a closed-form <strong>smoothing step</strong> that makes
+pixels with similar content colours receive similar outputs. Yoo et al. [25] (WCT²) use wavelet pooling.
+The guided filter of He et al. [7] is an efficient, edge-preserving local linear model and is closely
+related to the matting Laplacian used by Luan et al. Our refinement step borrows this idea.</p>
+<hr />
+<h2 id="3-dip-fundamentals-used">3. DIP Fundamentals Used</h2>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>Where it is used</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Colour spaces</strong> (RGB, CIELab, YCbCr, HSV)</td>
+<td>Reinhard and histogram transfer in Lab; transfer modes split L* (structure) from a<em>, b</em> (colour); YCbCr helpers; HSV saturation in the descriptor</td>
+</tr>
+<tr>
+<td><strong>Histograms, CDFs, histogram specification</strong></td>
+<td>Histogram-matching baseline; tone-only mode (tone curve = CDF matching of L*); histogram refinement post-process; Wasserstein/Bhattacharyya metrics</td>
+</tr>
+<tr>
+<td><strong>First/second-order statistics</strong> (mean, std, covariance)</td>
+<td>Reinhard; AdaIN (on deep features); guided filter (local mean/covariance); Lab-statistics metric</td>
+</tr>
+<tr>
+<td><strong>Convolution</strong></td>
+<td>VGG-19 encoder/decoder (3×3 convs, reflection padding); Gaussian blur in unsharp masking and film grain; box filters</td>
+</tr>
+<tr>
+<td><strong>Spatial filtering, edge-preserving smoothing</strong></td>
+<td>Guided filter (photorealistic refinement, semantic-mask refinement); bilateral filter (option and post-process)</td>
+</tr>
+<tr>
+<td><strong>Sharpening</strong></td>
+<td>Unsharp masking post-process</td>
+</tr>
+<tr>
+<td><strong>Normalisation statistics</strong></td>
+<td>Instance normalisation / AdaIN; ImageNet normalisation for torchvision VGG</td>
+</tr>
+<tr>
+<td><strong>Resampling</strong></td>
+<td>Aspect-preserving resize (INTER_AREA when downsampling for anti-aliasing), reflection padding to multiples of 8</td>
+</tr>
+<tr>
+<td><strong>Clustering</strong></td>
+<td>k-means in Lab for the dominant palette</td>
+</tr>
+<tr>
+<td><strong>Colorimetry</strong></td>
+<td>sRGB → linear → XYZ → (x, y) chromaticity → McCamy correlated colour temperature</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Colour spaces.</strong> RGB channels are highly correlated: a brightness change moves all three. CIELab
+separates lightness L* ∈ [0, 100] from two opponent chroma axes, a* (green–red) and b* (blue–yellow). It
+is approximately perceptually uniform, so Euclidean distances roughly follow perceived differences. This
+gives two properties we rely on: (i) per-channel statistics can be matched independently without
+creating colour casts, and (ii) <em>structure</em> (edges, texture) lives mostly in L<em>, so replacing a</em>, b* changes
+colour while keeping the structure.</p>
+<p><strong>Histogram specification.</strong> For a channel with CDF T(r) and a reference with CDF G(z), the mapping
+z = G⁻¹(T(r)) produces an output whose histogram approximates the reference's. Our implementation uses
+1024-bin CDFs with linear interpolation, and drops flat CDF segments so that the inverse is well defined.</p>
+<p><strong>Guided filter [7].</strong> For guide I and input p, the output in every window ω_k of radius r is modelled as
+q_i = a_kᵀ I_i + b_k. Least-squares fitting with regulariser ε gives</p>
+<pre><code>a_k = (Σ_k + εU)⁻¹ · cov_k(I, p)          b_k = mean_k(p) − a_kᵀ · mean_k(I)
+q_i = mean_{k∋i}(a_k)ᵀ · I_i + mean_{k∋i}(b_k)
+</code></pre>
+<p>where Σ_k is the 3×3 covariance of the colour guide in the window. All terms are box-filter means, so the
+cost is O(1) per pixel, independent of r. Because ∇q ≈ a ∇I, <strong>the output can only have edges where the
+guide has edges</strong>. This is exactly the property needed to remove hallucinated textures from a stylised
+image while keeping the content's edges.</p>
+<hr />
+<h2 id="4-methodology">4. Methodology</h2>
+<h3 id="41-method-0-classical-baselines-srcclassicalpy">4.1 Method 0 — Classical baselines (<code>src/classical.py</code>)</h3>
+<ul>
+<li><strong>Reinhard</strong> in CIELab: <code>out_c = (x_c − μ_c^A)·σ_c^B/σ_c^A + μ_c^B</code> for c ∈ {L, a, b}.</li>
+<li><strong>Histogram matching</strong> per channel (CDF matching) in RGB or Lab (Lab is used in the evaluation; RGB
+  appears in the failure analysis).</li>
+</ul>
+<p>Both expose a strength α (pixel blend; α = 0 returns the content exactly, which the tests verify).</p>
+<h3 id="42-method-1-gatys-et-al-optimisation-srcgatyspy">4.2 Method 1 — Gatys et al. optimisation (<code>src/gatys.py</code>)</h3>
+<p><img alt="Gatys architecture" src="figures/architecture_gatys.png" /></p>
+<p>With F_l(x) the VGG-19 activations at layer l and G_l = F_l F_lᵀ / (C_l H_l W_l):</p>
+<pre><code>L_content = mean( (F_relu4_2(x) − F_relu4_2(c))² )
+L_style   = Σ_{l ∈ {relu1_1, relu2_1, relu3_1, relu4_1, relu5_1}} (1/5) · mean( (G_l(x) − G_l(s))² )
+L_TV      = mean|x_{i+1,j} − x_{i,j}| + mean|x_{i,j+1} − x_{i,j}|
+L         = w_c·L_content + w_s·L_style + w_tv·L_TV,   w_c = 1, w_s = 1e5, w_tv = 1e-2
+</code></pre>
+<p>The image x is <strong>initialised from the content image</strong>, so the result stays photographic and converges
+faster. It is optimised with L-BFGS [24] (or Adam). Max-pooling is replaced by average pooling, as
+suggested by Gatys et al. The VGG is torchvision's ImageNet VGG-19 with ImageNet mean/std normalisation.</p>
+<h3 id="43-method-2-adain-feed-forward-transfer-srcadainpy-srcmodelspy">4.3 Method 2 — AdaIN feed-forward transfer (<code>src/adain.py</code>, <code>src/models.py</code>)</h3>
+<p><img alt="AdaIN + mood architecture" src="figures/architecture_adain_mood.png" /></p>
+<pre><code>f_c = E(c),  f_s = E(s)                     E = normalised VGG-19 up to relu4_1 (frozen)
+AdaIN(x, y) = σ(y) · (x − μ(x)) / σ(x) + μ(y)      (per channel, spatial statistics)
+t = α · AdaIN(f_c, f_s) + (1 − α) · f_c            (strength α ∈ [0, 1])
+output = D(t)                                      D = pretrained decoder (mirror of E)
+</code></pre>
+<ul>
+<li><strong>Multi-reference blending.</strong> Target statistics are mixed, μ = Σ wᵢ μ(f_sᵢ), σ = Σ wᵢ σ(f_sᵢ). Since
+  AdaIN is affine in (μ, σ), this equals mixing the AdaIN outputs.</li>
+<li><strong>Odd sizes.</strong> Inputs are reflect-padded to a multiple of 8 (three pooling stages / ×8 upsampling) and
+  cropped back afterwards.</li>
+<li><strong>Large images.</strong> Optional tiled decoding with <em>global</em> content statistics and feathered overlaps
+  (no seams), for memory safety.</li>
+<li><strong>Encoder/decoder compatibility.</strong> The decoder only inverts the feature space it was trained on, so we
+  use the normalised VGG-19 released with it. Its first 1×1 convolution contains the original Caffe
+  preprocessing, so the input is plain RGB in [0, 1] with <strong>no ImageNet normalisation</strong> (Section 6.2).</li>
+</ul>
+<h3 id="44-method-3-mood-aware-enhancements-srcmoodpy">4.4 Method 3 — Mood-aware enhancements (<code>src/mood.py</code>)</h3>
+<p><strong>Transfer modes</strong> (applicable to the output of any method), in CIELab:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>L* (structure, brightness)</th>
+<th>a<em>, b</em> (colour)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>full</code></td>
+<td>from transfer output</td>
+<td>from transfer output</td>
+</tr>
+<tr>
+<td><code>color</code> (default for AdaIN + mood)</td>
+<td><strong>content</strong></td>
+<td>transfer output (guided-filtered)</td>
+</tr>
+<tr>
+<td><code>tone</code></td>
+<td>content L* remapped by a global monotone tone curve towards the output's L* distribution (CDF matching)</td>
+<td>content (saturation-compensated)</td>
+</tr>
+<tr>
+<td><code>color_tone</code></td>
+<td>tone curve as above</td>
+<td>transfer output (guided-filtered)</td>
+</tr>
+</tbody>
+</table>
+<p>A global monotone curve preserves pixel ordering, so it cannot create or move edges. This lets the tone
+modes transfer brightness and contrast without touching structure.</p>
+<p><strong>Photorealistic refinement.</strong> The AdaIN output is filtered with the colour guided filter, using the
+content image as guide (r = long side / 16, i.e. 32 px at 512 px, ε = 10⁻²; chosen empirically, Section 6). Within each window the
+refined output is a <em>locally affine function of the content colours</em>. This is the same assumption as
+Luan et al.'s photorealism regulariser [5] and PhotoWCT's smoothing step [6], but computed in closed
+form in O(N). AdaIN's hallucinated textures are not explained by the guide, so they are averaged away.
+Edges present in the content are kept.</p>
+<p><strong>Mood descriptor.</strong> A five-colour palette from k-means in Lab (with share-proportional swatches), mean
+L* (brightness), std L* (RMS contrast), mean HSV saturation, Hasler–Süsstrunk colourfulness [18], and
+the correlated colour temperature of the mean colour via McCamy's formula [17]
+(CCT = 449n³ + 3525n² + 6823.3n + 5520.33, n = (x − 0.3320)/(0.1858 − y)), combined into a rule-based
+label such as "warm, mid-key, vivid".</p>
+<p><strong>Presets.</strong> Six named moods in <code>data/moods/</code>: Golden Hour, Cold Blue Dusk, Foggy/Misty, Neon Night,
+Vintage Film and Dark Noir.</p>
+<p><strong>Post-processing</strong> (sliders, all off by default): chroma histogram refinement towards the reference,
+bilateral edge-preserving smoothing, unsharp-mask sharpening, luminance film grain weighted towards
+mid-tones, and a radial vignette.</p>
+<p><strong>Semantic-aware transfer (stretch goal).</strong> A pretrained DeepLabV3-MobileNetV3 [13, 14] gives
+P(background). Its complement (a soft foreground-object mask) is refined with a guided filter and used
+to blend a full-strength mood on the background with a weaker (α = 0.35) or different mood on the
+foreground objects.</p>
+<hr />
+<h2 id="5-implementation-details">5. Implementation Details</h2>
+<h3 id="51-data">5.1 Data</h3>
+<ul>
+<li><strong>Content set (10 images):</strong> Arezzo Piazza Grande, autumn hills in mist, Caesars Palace (Las Vegas),
+  Kaohsiung skyline, forest lake in morning mist, Las Vegas Strip (The Venetian), Lucca rooftops,
+  Matterhorn south face, Niagara American Falls, Chianti vineyard landscape. They cover architecture,
+  cityscapes, landscapes, water, foliage and fine texture.</li>
+<li><strong>Mood set (6 references):</strong> Golden Hour (beach sunset), Cold Blue Dusk (snowy town at blue hour),
+  Foggy/Misty (foggy street), Neon Night (neon light installation at night), Vintage Film (Piccadilly
+  Circus, 1962 colour slide) and Dark Noir (low-key black-and-white portrait).</li>
+<li>All 16 images are from <strong>Wikimedia Commons</strong> under CC0 / CC BY / CC BY-SA licences. We retrieved
+  author and licence metadata through the Wikimedia API (<code>scripts/fetch_commons.py</code> keeps only
+  CC0/PD/CC BY/CC BY-SA files) and list them in <code>data/*/CREDITS.md</code>. Images were resized to ≤1600 px.
+  One extra public-domain NASA image (scikit-image's <em>astronaut</em>) is used only for the semantic demo,
+  because the landscape set contains no PASCAL-VOC objects.</li>
+</ul>
+<h3 id="52-weights-all-pretrained-nothing-trained-in-this-project">5.2 Weights (all pretrained; nothing trained in this project)</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Weights</th>
+<th>Input preprocessing</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AdaIN encoder</td>
+<td>normalised VGG-19 (<code>vgg_normalised.pth</code>, naoto0804/pytorch-AdaIN), truncated at relu4_1</td>
+<td>raw RGB in [0, 1]; the first 1×1 conv performs the Caffe BGR/mean preprocessing</td>
+</tr>
+<tr>
+<td>AdaIN decoder</td>
+<td><code>decoder.pth</code> (same release; trained by its author on MS-COCO [21] content + WikiArt style)</td>
+<td>relu4_1 features → RGB</td>
+</tr>
+<tr>
+<td>Gatys</td>
+<td>torchvision VGG-19 <code>IMAGENET1K_V1</code> (max-pool → avg-pool)</td>
+<td>ImageNet mean/std normalisation</td>
+</tr>
+<tr>
+<td>LPIPS metric</td>
+<td>AlexNet + LPIPS v0.1 linear layers</td>
+<td>[−1, 1]</td>
+</tr>
+<tr>
+<td>CLIP metric</td>
+<td>open_clip ViT-B/32, <code>laion2b_s34b_b79k</code> [11, 12]</td>
+<td>CLIP preprocessing</td>
+</tr>
+<tr>
+<td>Semantic mode</td>
+<td>torchvision DeepLabV3-MobileNetV3-Large (VOC labels) [13, 14, 23]</td>
+<td>ImageNet normalisation</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Compatibility check.</strong> With α = 0 the AdaIN path computes <code>decoder(encoder(content))</code>. The result
+clearly reproduces the content (Figure "alpha sweep", first column), which confirms that the encoder and
+decoder match. A mismatched encoder (e.g. torchvision VGG with ImageNet normalisation) produces
+unrecognisable output. Reconstruction is approximate: SSIM to the content was 0.60 at 512 px and
+0.29–0.71 at 128–256 px, depending on image detail, because the decoder was trained with content+style
+losses rather than for exact reconstruction, and relu4_1 has 1/8 resolution.</p>
+<h3 id="53-hyper-parameters">5.3 Hyper-parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Working size (long side)</td>
+<td>512 px on GPU/MPS (default 384 px on CPU)</td>
+</tr>
+<tr>
+<td>Gatys</td>
+<td>w_c = 1, w_s = 1e5, w_tv = 1e-2, L-BFGS (history 50), 300 function evaluations, init = content, 384 px</td>
+</tr>
+<tr>
+<td>AdaIN</td>
+<td>α = 1 (evaluation), statistics at relu4_1, ε = 1e-5 in σ</td>
+</tr>
+<tr>
+<td>Guided filter (refinement)</td>
+<td>colour guide = content, r = long side / 16 (32 px at 512 px), ε = 1e-2</td>
+</tr>
+<tr>
+<td>Transfer mode for "AdaIN + mood"</td>
+<td><code>color</code> (default); <code>color_tone</code> and <code>tone</code> shown in the mode study</td>
+</tr>
+<tr>
+<td>Histogram matching</td>
+<td>1024 bins, Lab (evaluation), RGB (failure analysis)</td>
+</tr>
+<tr>
+<td>Palette</td>
+<td>k-means, k = 5, Lab, 160 px thumbnail, k-means++ init, 4 attempts</td>
+</tr>
+<tr>
+<td>Seeds</td>
+<td>Python/NumPy/PyTorch seed 0 (<code>set_seed</code>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="54-gatys-evaluation-subset">5.4 Gatys evaluation subset</h3>
+<p>Gatys is ~100× slower than the feed-forward methods, so it was run on a <strong>documented subset</strong>: the first
+three content images in alphabetical order (<strong>arezzo_piazza, autumn_hills, caesars_palace</strong>) × all six
+moods = <strong>18 pairs, at 384 px, 300 L-BFGS function evaluations</strong>. All other methods run on the full
+10 × 6 = 60 pairs at 512 px. To make the comparison fair, the results table also reports every method
+restricted to the same 18 pairs.</p>
+<h3 id="55-hardware-and-software">5.5 Hardware and software</h3>
+<p>Apple M5 laptop with 16 GB unified memory, PyTorch 2.15.0 using the <strong>MPS</strong> (Metal) GPU backend; no CUDA
+GPU was available. CPU timings use the same machine. Python 3.13.5, torchvision 0.29.2, OpenCV 5.1,
+scikit-image 0.26, lpips 0.1.4, open_clip 4.2.2, Gradio 6.32. Timings are wall-clock with device
+synchronisation, after a warm-up run, and include pre-/post-processing at the working size but not disk I/O.</p>
+<hr />
+<h2 id="6-experiments-and-results">6. Experiments and Results</h2>
+<p>All numbers and figures in this section come from <code>python scripts/run_experiments.py --speed</code>. The raw
+per-pair values are in <code>results/metrics.csv</code> (378 rows) and the aggregates in
+<code>results/metrics_summary.{csv,md}</code>, <code>results/speed.csv</code>, <code>results/gf_ablation.json</code> and
+<code>results/refinement_ssim.json</code>.</p>
+<h3 id="61-metrics">6.1 Metrics</h3>
+<ul>
+<li><strong>Content preservation</strong> (output vs. content): <strong>SSIM</strong> [9] and <strong>LPIPS</strong> [10], both on <em>luminance</em>,
+  because a mood change is supposed to change colour.</li>
+<li><strong>Mood match</strong> (output vs. reference): <strong>Lab statistics distance</strong> ‖Δμ‖ + ‖Δσ‖ over (L<em>, a</em>, b<em>);
+  mean 1-D <strong>Wasserstein</strong> distance of the L</em>, a<em>, b</em> distributions; <strong>Bhattacharyya</strong> distance of
+  8×8×8 RGB histograms; <strong>CLIP</strong> image–image cosine similarity, and <strong>ΔCLIP</strong>, its gain over the
+  unmodified content's similarity to the same reference. This removes the bias of the content scene
+  itself.</li>
+<li><strong>Mood vs. text</strong>: <strong>ΔCLIP text</strong> is the gain in CLIP similarity to a mood prompt (e.g. "a photo in warm
+  golden hour sunset light"; prompts in <code>scripts/run_experiments.py</code>).</li>
+<li><strong>Speed</strong>: seconds per image at the working size, with device synchronisation.</li>
+<li>An <strong>Identity</strong> row (output = content) is included as a reference point.</li>
+</ul>
+<h3 id="62-quantitative-results">6.2 Quantitative results</h3>
+<p><strong>Table 1 — Full grid: 10 contents × 6 moods = 60 pairs per method, 512 px, Apple MPS (mean ± std).</strong></p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>SSIM ↑</th>
+<th>LPIPS ↓</th>
+<th>Lab stat dist ↓</th>
+<th>Wasserstein ↓</th>
+<th>Bhattacharyya ↓</th>
+<th>CLIP img ↑</th>
+<th>ΔCLIP img ↑</th>
+<th>ΔCLIP text ↑</th>
+<th>s/img</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Identity (content)</td>
+<td>1.000 ± 0.000</td>
+<td>0.000 ± 0.000</td>
+<td>50.1 ± 19.0</td>
+<td>18.73 ± 8.09</td>
+<td>0.801 ± 0.127</td>
+<td>0.325 ± 0.088</td>
+<td>0.000</td>
+<td>0.000</td>
+<td>–</td>
+</tr>
+<tr>
+<td>Reinhard</td>
+<td>0.809 ± 0.182</td>
+<td>0.114 ± 0.091</td>
+<td><strong>6.9 ± 5.6</strong></td>
+<td>4.28 ± 2.50</td>
+<td>0.494 ± 0.150</td>
+<td>0.397 ± 0.086</td>
+<td>0.071 ± 0.061</td>
+<td>0.089 ± 0.051</td>
+<td><strong>0.010</strong></td>
+</tr>
+<tr>
+<td>Histogram (Lab)</td>
+<td>0.706 ± 0.227</td>
+<td>0.270 ± 0.182</td>
+<td>8.2 ± 9.4</td>
+<td><strong>2.66 ± 2.84</strong></td>
+<td><strong>0.433 ± 0.168</strong></td>
+<td>0.394 ± 0.079</td>
+<td>0.069 ± 0.048</td>
+<td>0.083 ± 0.045</td>
+<td>0.048</td>
+</tr>
+<tr>
+<td>AdaIN (plain)</td>
+<td>0.331 ± 0.128</td>
+<td>0.477 ± 0.122</td>
+<td>13.3 ± 5.7</td>
+<td>5.43 ± 2.42</td>
+<td>0.444 ± 0.117</td>
+<td><strong>0.453 ± 0.079</strong></td>
+<td><strong>0.128 ± 0.091</strong></td>
+<td>0.096 ± 0.062</td>
+<td>0.122</td>
+</tr>
+<tr>
+<td><strong>AdaIN + mood (ours, default: color mode + GF)</strong></td>
+<td><strong>0.996 ± 0.004</strong></td>
+<td><strong>0.006 ± 0.006</strong></td>
+<td>26.8 ± 11.2</td>
+<td>9.57 ± 3.60</td>
+<td>0.598 ± 0.097</td>
+<td>0.376 ± 0.085</td>
+<td>0.051 ± 0.048</td>
+<td>0.086 ± 0.036</td>
+<td>0.139</td>
+</tr>
+<tr>
+<td><strong>AdaIN + mood (ours, color+tone mode)</strong></td>
+<td>0.757 ± 0.248</td>
+<td>0.192 ± 0.155</td>
+<td>16.8 ± 6.0</td>
+<td>6.27 ± 2.62</td>
+<td>0.528 ± 0.148</td>
+<td>0.391 ± 0.077</td>
+<td>0.066 ± 0.057</td>
+<td><strong>0.108 ± 0.050</strong></td>
+<td>0.123</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Table 2 — Gatys subset: 3 contents (arezzo_piazza, autumn_hills, caesars_palace) × 6 moods = 18 pairs.</strong>
+Gatys ran at 384 px with 300 L-BFGS evaluations; the other methods ran at 512 px on the same 18 pairs.</p>
+<table>
+<thead>
+<tr>
+<th>Method (same 18 pairs)</th>
+<th>SSIM ↑</th>
+<th>LPIPS ↓</th>
+<th>Lab stat dist ↓</th>
+<th>Wasserstein ↓</th>
+<th>ΔCLIP img ↑</th>
+<th>ΔCLIP text ↑</th>
+<th>s/img</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Reinhard</td>
+<td>0.796 ± 0.196</td>
+<td>0.119 ± 0.096</td>
+<td>6.7 ± 5.6</td>
+<td>4.18 ± 2.48</td>
+<td>0.076 ± 0.069</td>
+<td>0.089 ± 0.055</td>
+<td>0.011</td>
+</tr>
+<tr>
+<td>Histogram (Lab)</td>
+<td>0.697 ± 0.252</td>
+<td>0.269 ± 0.201</td>
+<td>7.0 ± 6.5</td>
+<td>2.18 ± 1.95</td>
+<td>0.086 ± 0.059</td>
+<td>0.094 ± 0.053</td>
+<td>0.046</td>
+</tr>
+<tr>
+<td>AdaIN</td>
+<td>0.339 ± 0.120</td>
+<td>0.458 ± 0.126</td>
+<td>13.6 ± 5.3</td>
+<td>5.50 ± 2.31</td>
+<td>0.143 ± 0.094</td>
+<td>0.108 ± 0.059</td>
+<td>0.121</td>
+</tr>
+<tr>
+<td>AdaIN + mood (color)</td>
+<td>0.998 ± 0.003</td>
+<td>0.003 ± 0.003</td>
+<td>29.2 ± 12.7</td>
+<td>10.26 ± 4.21</td>
+<td>0.058 ± 0.049</td>
+<td>0.088 ± 0.029</td>
+<td>0.142</td>
+</tr>
+<tr>
+<td>AdaIN + mood (color+tone)</td>
+<td>0.753 ± 0.271</td>
+<td>0.185 ± 0.177</td>
+<td>15.8 ± 5.2</td>
+<td>6.13 ± 2.47</td>
+<td>0.079 ± 0.061</td>
+<td>0.112 ± 0.041</td>
+<td>0.119</td>
+</tr>
+<tr>
+<td><strong>Gatys</strong> (384 px, 300 it.)</td>
+<td>0.638 ± 0.080</td>
+<td>0.265 ± 0.071</td>
+<td>21.6 ± 12.4</td>
+<td>7.71 ± 3.88</td>
+<td>0.058 ± 0.067</td>
+<td>0.072 ± 0.040</td>
+<td><strong>22.2</strong></td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Metric summary" src="figures/metrics_summary.png" />
+<em>Figure 1 — Mean ± std per method (Gatys on its subset).</em></p>
+<p><img alt="Trade-off" src="figures/tradeoff_scatter.png" />
+<em>Figure 2 — Structure (SSIM) vs. colour-statistics match (Lab distance); each small dot is one pair.</em></p>
+<p><strong>Table 3 — Speed (seconds per image, mean of 3 pairs, after warm-up; <code>results/speed.csv</code>).</strong></p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Apple M5 CPU</th>
+<th>Apple M5 GPU (MPS)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Reinhard (512 px)</td>
+<td>0.010</td>
+<td>0.011</td>
+</tr>
+<tr>
+<td>Histogram, Lab (512 px)</td>
+<td>0.042</td>
+<td>0.042</td>
+</tr>
+<tr>
+<td>AdaIN (512 px)</td>
+<td>0.546</td>
+<td>0.091</td>
+</tr>
+<tr>
+<td>AdaIN + mood, color (512 px)</td>
+<td>0.391</td>
+<td>0.103</td>
+</tr>
+<tr>
+<td>AdaIN + mood, color+tone (512 px)</td>
+<td>0.401</td>
+<td>0.117</td>
+</tr>
+<tr>
+<td>Gatys (384 px, 300 L-BFGS evals)</td>
+<td>57.9</td>
+<td>20.6</td>
+</tr>
+</tbody>
+</table>
+<p>No CUDA GPU was available, so "GPU" means Apple MPS. The classical methods run in NumPy/OpenCV on the
+CPU in both columns. On CPU, AdaIN + mood was measured slightly faster than plain AdaIN; the plain-AdaIN
+CPU number has a large spread (± 0.14 s) and the difference is within noise.</p>
+<p><strong>Table 4 — Per-mood view (mean over the 10 contents).</strong></p>
+<table>
+<thead>
+<tr>
+<th>Mood</th>
+<th>SSIM ours (color)</th>
+<th>SSIM ours (color+tone)</th>
+<th>SSIM Reinhard</th>
+<th>ΔCLIP text ours (color)</th>
+<th>ΔCLIP text ours (color+tone)</th>
+<th>ΔCLIP text Reinhard</th>
+<th>ΔCLIP text AdaIN</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cold Blue Dusk</td>
+<td>0.997</td>
+<td>0.880</td>
+<td>0.928</td>
+<td>0.076</td>
+<td>0.076</td>
+<td>0.069</td>
+<td>0.058</td>
+</tr>
+<tr>
+<td>Dark Noir</td>
+<td>0.997</td>
+<td>0.231</td>
+<td>0.449</td>
+<td>0.110</td>
+<td>0.193</td>
+<td>0.177</td>
+<td>0.175</td>
+</tr>
+<tr>
+<td>Foggy / Misty</td>
+<td>0.998</td>
+<td>0.792</td>
+<td>0.879</td>
+<td>0.057</td>
+<td>0.080</td>
+<td>0.065</td>
+<td>0.060</td>
+</tr>
+<tr>
+<td>Golden Hour</td>
+<td>0.992</td>
+<td>0.857</td>
+<td>0.932</td>
+<td>0.108</td>
+<td>0.103</td>
+<td>0.078</td>
+<td>0.125</td>
+</tr>
+<tr>
+<td>Neon Night</td>
+<td>0.995</td>
+<td>0.881</td>
+<td>0.850</td>
+<td>0.085</td>
+<td>0.097</td>
+<td>0.098</td>
+<td>0.120</td>
+</tr>
+<tr>
+<td>Vintage Film</td>
+<td>0.997</td>
+<td>0.903</td>
+<td>0.817</td>
+<td>0.082</td>
+<td>0.099</td>
+<td>0.045</td>
+<td>0.036</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Reading the numbers.</strong></p>
+<ol>
+<li><strong>Structure.</strong> Our default pipeline keeps the content essentially intact (SSIM 0.996, LPIPS 0.006),
+   by far the best of all methods that change the image. Plain AdaIN destroys structure (SSIM 0.331,
+   LPIPS 0.477) and Gatys is in between (0.638). This is the quantitative version of "AdaIN looks
+   painterly on photos".</li>
+<li><strong>Colour statistics.</strong> Reinhard and histogram matching have the best Lab/Wasserstein/Bhattacharyya
+   scores. This is expected, not a weakness of the deep methods: those metrics measure exactly the
+   global statistics that the classical methods optimise. Our default colour mode deliberately keeps
+   the content's L*, so it halves the Lab distance (50.1 → 26.8) but cannot close it. The color+tone mode
+   adds a monotone tone curve and reaches 16.8, better than Gatys (21.6 on its subset), while staying
+   photographic.</li>
+<li><strong>Perceived mood (CLIP).</strong> Plain AdaIN has the highest image–image ΔCLIP (0.128), partly because it
+   also copies <em>texture</em>, which CLIP image embeddings are sensitive to. Against <strong>text descriptions</strong> of
+   the mood, our color+tone mode has the highest gain of all methods (0.108 vs. 0.096 AdaIN,
+   0.089 Reinhard), and the default colour mode (0.086) is on par with Reinhard while keeping the
+   structure essentially perfect. Per mood, ours (colour) beats Reinhard on golden hour, blue dusk and
+   vintage film.</li>
+<li><strong>SSIM of the tone modes.</strong> The color+tone SSIM (0.757) is pulled down almost entirely by <strong>Dark
+   Noir</strong> (0.231): darkening an image by a large amount changes SSIM's luminance and contrast terms and
+   crushes shadow detail. On the other five moods it averages 0.863, comparable to Reinhard (0.809 on
+   all six moods).</li>
+<li><strong>Speed.</strong> AdaIN + mood runs at ~0.1 s per 512 px image on the laptop GPU (≈10 fps) and ~0.4 s on CPU,
+   about <strong>200× faster than Gatys</strong> on the same device (20.6 s on MPS, 57.9 s on CPU, at a smaller size).
+   The mood layer (Lab conversion + colour guided filter, + tone curve) adds only ~12–26 ms on MPS.</li>
+</ol>
+<h3 id="63-qualitative-comparison">6.3 Qualitative comparison</h3>
+<p><img alt="Qualitative grid" src="figures/qualitative_grid.png" />
+<em>Figure 3 — Content | reference | Reinhard | histogram matching (Lab) | Gatys | AdaIN | AdaIN + mood
+(ours, default). Rows were picked from the Gatys subset so that every column is populated. All 60 × 6
+outputs are in <code>results/outputs/&lt;method&gt;/</code>.</em></p>
+<p>The classical methods colour the whole image with the reference's global statistics. They are often
+convincing (golden hour), but histogram matching creates speckle and posterised skies (neon, vintage
+rows), and both spread colours with no regard for scene content. Gatys gives the right colours but with
+blotchy, painterly texture. Plain AdaIN produces the strongest mood but warps buildings and trees.
+Ours keeps every edge of the content and moves the colour palette clearly towards the reference.</p>
+<h3 id="64-strength">6.4 Strength α</h3>
+<p><img alt="Alpha sweep" src="figures/alpha_sweep.png" />
+<em>Figure 4 — α = 0, 0.25, 0.5, 0.75, 1 for plain AdaIN (top) and AdaIN + mood (bottom). At α = 0 the
+AdaIN row shows the decoder's reconstruction of the content (encoder/decoder compatibility check).</em></p>
+<p>α interpolates smoothly in feature space. In plain AdaIN, structure degrades as α grows; in our pipeline
+only the colour changes, and the structure is identical for every α.</p>
+<h3 id="65-transfer-modes">6.5 Transfer modes</h3>
+<p><img alt="Transfer modes" src="figures/transfer_modes.png" />
+<em>Figure 5 — Full / colour-only / tone-only / colour+tone with the Dark Noir reference.</em></p>
+<p>With a noir reference, the <em>colour-only</em> mode removes colour (the reference's chroma is ≈ 0) but keeps
+the bright daylight luminance. The result is a clean black-and-white photo, but not "dark". The
+<em>tone-only</em> mode keeps the original colours and applies the noir tone curve (dark, high contrast). The
+<em>colour+tone</em> mode combines both and is the closest to the noir mood without the hallucinated shapes of
+raw AdaIN. This is why the mode is user-selectable.</p>
+<h3 id="66-photorealistic-refinement-before-after">6.6 Photorealistic refinement (before / after)</h3>
+<p><img alt="Refinement" src="figures/refinement_before_after.png" />
+<em>Figure 6 — Raw AdaIN, colour mode without refinement, colour mode + guided filter (ours), and full mode
++ guided filter, with zoomed crops.</em></p>
+<p>Luminance SSIM to the content for this example (<code>results/refinement_ssim.json</code>): raw AdaIN <strong>0.222</strong>,
+colour mode without refinement <strong>0.980</strong>, <strong>colour mode + guided filter 0.994</strong>, full mode + guided
+filter 0.737. Keeping L* removes the geometric distortion. The guided filter then removes the
+colour speckle that AdaIN's texture leaves in the chroma channels. Applying the guided filter to the
+<em>full</em> AdaIN output removes texture but cannot undo the low-frequency warping. Both steps are needed.</p>
+<p><img alt="GF ablation" src="figures/guided_filter_ablation.png" />
+<em>Figure 7 — Guided-filter radius/ε ablation (colour mode) on four pairs, with radii scaled to 512 px.</em></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>mean SSIM to content</th>
+<th>high-frequency chroma energy ↓</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>no refinement</td>
+<td>0.987</td>
+<td>4.41</td>
+</tr>
+<tr>
+<td>r = 8, ε = 1e-3</td>
+<td>0.993</td>
+<td>2.14</td>
+</tr>
+<tr>
+<td>r = 16, ε = 1e-3</td>
+<td>0.994</td>
+<td>2.17</td>
+</tr>
+<tr>
+<td>r = 32, ε = 1e-3</td>
+<td>0.995</td>
+<td>2.18</td>
+</tr>
+<tr>
+<td><strong>r = 32, ε = 1e-2 (default)</strong></td>
+<td><strong>0.995</strong></td>
+<td><strong>1.96</strong></td>
+</tr>
+<tr>
+<td>r = 64, ε = 1e-2</td>
+<td>0.995</td>
+<td>1.91</td>
+</tr>
+</tbody>
+</table>
+<p>Any refinement halves the high-frequency chroma noise. Larger windows additionally remove the
+<em>low-frequency</em> colour blotches visible in Figure 7 (e.g. pink/blue patches in the Arezzo sky), which the
+high-frequency measure does not capture. We chose r = 32 px (at 512 px), ε = 1e-2 visually as the best
+compromise. r = 64 scores about the same; we did not observe a clear visual gain, and much larger windows
+let colour bleed across boundaries (failure case 4).</p>
+<h3 id="67-multi-reference-blending">6.7 Multi-reference blending</h3>
+<p><img alt="Blending" src="figures/multi_reference_blending.png" />
+<em>Figure 8 — Mixing Golden Hour and Cold Blue Dusk statistics with weights 100/0 … 0/100.</em></p>
+<p>The transition is smooth and passes through plausible intermediate moods (a warm–cool "pastel dusk" at
+50/50), because the weighted statistics move continuously in feature space.</p>
+<h3 id="68-mood-descriptors-and-presets">6.8 Mood descriptors and presets</h3>
+<p><img alt="Presets" src="figures/mood_presets_descriptors.png" />
+<em>Figure 9 — The six presets, their k-means Lab palettes (widths ∝ share) and rule-based labels.</em></p>
+<p>The labels match intuition: Cold Blue Dusk = "cool, mid-key, vivid"; Dark Noir = "neutral, dark,
+desaturated"; Foggy = "neutral, mid-key, desaturated, low-contrast"; Golden Hour = "warm, mid-key,
+vivid"; Neon Night = "magenta, mid-key, vivid"; Vintage Film = "neutral, mid-key, muted,
+high-contrast". Full values are in <code>results/mood_descriptors.json</code>. A first version labelled neon
+"warm" because its warmth score mixed a* (red–green) and b* (yellow–blue); the rule now separates
+magenta casts (high a<em>, low b</em>) from warm light (high b*).</p>
+<h3 id="69-post-processing">6.9 Post-processing</h3>
+<p><img alt="Post-processing" src="figures/post_processing.png" />
+<em>Figure 10 — Optional post-processing on an AdaIN + mood result (Vintage Film reference).</em></p>
+<p>Grain + vignette gives a convincing "film" look, and sharpening restores a little crispness lost to the
+decoder. <strong>Chroma histogram refinement is risky:</strong> at 0.6 it creates saturated red/yellow patches,
+because CDF matching maps the content's chroma distribution onto the reference's long tail of
+saturated sign colours. This is why all post-processing is off by default and exposed as sliders.</p>
+<h3 id="610-semantic-aware-transfer-stretch-goal">6.10 Semantic-aware transfer (stretch goal)</h3>
+<p><img alt="Semantic" src="figures/semantic_transfer.png" />
+<em>Figure 11 — DeepLabV3 foreground mask (refined with a guided filter), uniform Cold Blue Dusk mood, and
+semantic transfer with blue dusk on the background and golden hour on the person.</em></p>
+<p>The stretch goal was implemented and works on images that contain PASCAL-VOC objects. None of our 10
+landscape/city content images contain such objects (the predicted foreground fraction was 0 for all of
+them), so the demonstration uses the public-domain NASA <em>astronaut</em> image. A sky/ground split would need a
+model trained with a "sky" class (e.g. ADE20K); VOC has none.</p>
+<h3 id="611-failure-cases">6.11 Failure cases</h3>
+<p><img alt="Failures" src="figures/failure_cases.png" />
+<em>Figure 12 — Failure cases.</em></p>
+<ol>
+<li><strong>Histogram matching in RGB — colour cast and over-saturation, plus noise</strong> (Kaohsiung skyline × Neon
+   Night). Matching R, G and B independently ignores their correlation. The smooth blue sky is mapped
+   onto the reference's multi-modal distribution, producing posterised magenta noise and saturated red
+   buildings.</li>
+<li><strong>Plain AdaIN — texture leakage and warped edges</strong> (Caesars Palace × Golden Hour). The decoder
+   reproduces painting-like strokes; straight architectural lines and windows are destroyed. This is the
+   main motivation for the mood layer.</li>
+<li><strong>Reinhard — scene-content mismatch</strong> (forest lake × Neon Night). Global statistics of a dark, pink
+   night scene are forced onto a green daylight forest. The whole image turns purple, including the
+   water and the trees, because Reinhard has no notion of what should be lit by neon.</li>
+<li><strong>Over-smoothed guided filter — colour halos</strong> (Las Vegas × Golden Hour, r = 96, ε = 0.2). With a very
+   large window and weak edge-awareness, the colour model can no longer follow object boundaries. The
+   orange of the sky bleeds over the buildings and the result looks like a uniform sepia filter. This is
+   why the radius was tuned (Section 6.6).</li>
+<li><strong>Our method — residual colour blob</strong> (vineyard × Neon Night). AdaIN sometimes places a strong
+   reference colour (red) on one object (the cypress tree) as a low-frequency blob. Because the blob is
+   larger than smooth regions of the guide, it survives the guided filter. Semantic correspondence
+   (Luan et al. [5]) or stronger smoothing on small objects would be needed.</li>
+</ol>
+<hr />
+<h2 id="7-discussion">7. Discussion</h2>
+<h3 id="71-strengths">7.1 Strengths</h3>
+<ul>
+<li><strong>Photographic results by construction.</strong> Keeping L* and refining chroma with a guide-constrained,
+  locally affine model makes it nearly impossible to introduce new edges or textures (SSIM 0.996).</li>
+<li><strong>Deep features choose the colours.</strong> Unlike Reinhard, the colour placement comes from the decoder
+  working on 512-channel VGG statistics, so colours can vary with local content rather than following
+  one global affine map. Ours beats Reinhard on CLIP-text gain for golden hour, blue dusk and vintage
+  film, which is consistent with this (though not proof of it).</li>
+<li><strong>Fast and controllable.</strong> ~0.1 s per image on a laptop GPU, with α, modes, blending and post-processing
+  exposed in the CLI and GUI.</li>
+<li><strong>Honest, modular baselines.</strong> Every method shares the same I/O and evaluation code, so the comparison
+  is like for like.</li>
+</ul>
+<h3 id="72-limitations">7.2 Limitations</h3>
+<ul>
+<li><strong>Colour-only mode under-transfers brightness-driven moods.</strong> Noir and night moods are mostly about
+  tone; the default mode turns them into clean black-and-white or tinted daylight photos. The
+  color+tone mode fixes this at the cost of SSIM. Choosing the mode per mood automatically (e.g. from
+  the descriptor) is future work.</li>
+<li><strong>No relighting.</strong> Global statistics cannot move shadows, add a low sun or turn on street lights. A
+  midday photo with a golden-hour palette is still lit from above.</li>
+<li><strong>Scene mismatch.</strong> A neon-night reference applied to a forest has no correspondence between
+  objects. All methods, ours included, can only redistribute colours plausibly (Section 6.11).</li>
+<li><strong>Residual AdaIN blobs</strong> on small objects can survive the refinement (failure case 5).</li>
+<li><strong>Decoder resolution.</strong> The AdaIN decoder works at 1/8 resolution and was trained on WikiArt styles.
+  Its α = 0 reconstruction is only approximate (SSIM ≈ 0.6 at 512 px), which is irrelevant in colour
+  mode but limits the full mode.</li>
+<li><strong>Metrics are proxies.</strong> SSIM penalises intended tone changes; global colour statistics favour the
+  classical methods by construction; CLIP image similarity rewards copied texture. No single number
+  captures "the mood is right and it still looks like a photo". A user study (Appendix A) would be the
+  definitive test, but none was conducted.</li>
+<li><strong>Descriptor heuristics.</strong> The label thresholds were set by hand on the six presets, and McCamy's CCT
+  formula is unreliable far from the Planckian locus (strongly coloured images hit the 25 000 K clip).</li>
+<li><strong>Semantic mode</strong> is limited to VOC object classes (no sky), and our landscape test set contains none.</li>
+</ul>
+<h3 id="73-ethical-notes">7.3 Ethical notes</h3>
+<p>Mood transfer is image manipulation. It can make a real scene look more dramatic, gloomier or more
+idyllic than it was, which matters in journalism, real-estate and tourism advertising, legal evidence
+and social media. Edited images should be disclosed as such. Our tool keeps no data and runs locally.
+All images used here are freely licensed and credited (<code>data/*/CREDITS.md</code>), and the pretrained models are
+used under their respective licences.</p>
+<hr />
+<h2 id="8-conclusion-and-future-work">8. Conclusion and Future Work</h2>
+<p>We built a complete mood-transfer system whose core is deep learning (pretrained VGG-19 with Gatys
+optimisation and AdaIN) and whose output stays photographic thanks to a mood layer grounded in
+classical DIP: colour-space separation of structure and chroma, an edge-preserving guided filter that
+uses the content as guide, tone curves from histogram specification, and colour statistics for
+description and evaluation. On 60 content–mood pairs, plain neural transfer gave the strongest
+texture/style change but destroyed structure. The classical methods matched global colour statistics
+best but ignore content. Our pipeline kept structure nearly perfectly while delivering a clearly
+visible, controllable mood shift, ~200× faster than Gatys.</p>
+<p><strong>Future work:</strong> (1) semantic correspondence between content and reference regions (sky↔sky,
+lights↔lights) with a segmentation model that has a sky class; (2) a decoder trained specifically for
+photorealism (e.g. WCT² [25] or PhotoWCT [6] unpooling); (3) automatic mode selection from the mood
+descriptor; (4) local relighting (shadows, light sources) for true time-of-day changes; (5) temporal
+consistency for video; (6) a user study with the template below.</p>
+<hr />
+<h2 id="appendix-a-user-study-template-not-conducted">Appendix A — User-study template (not conducted)</h2>
+<p><em>Setup:</em> 12 participants; 20 random content–mood pairs; for each pair show the content, the reference
+and the outputs of 4 methods (Reinhard, Gatys, AdaIN, ours) in random order, unlabeled.</p>
+<ol>
+<li><em>Mood match:</em> "Which image best captures the mood/atmosphere of the reference?" (pick one)</li>
+<li><em>Photorealism:</em> "Rate how much each image looks like an unedited photograph." (1–5 Likert)</li>
+<li><em>Content preservation:</em> "Are all objects of the original image still clearly recognisable?" (1–5)</li>
+<li><em>Artefacts:</em> "Do you see any unnatural textures, halos or colour blotches?" (yes/no + where)</li>
+<li><em>Overall preference:</em> "Which result would you post/use?" (pick one)</li>
+</ol>
+<p><em>Analysis:</em> preference shares with 95 % binomial confidence intervals; Likert means with a Friedman test
+across methods and Wilcoxon post-hoc tests (Holm-corrected).</p>
+<h2 id="appendix-b-reproduction">Appendix B — Reproduction</h2>
+<pre><code>python -m venv .venv &amp;&amp; .venv/bin/pip install -r requirements.txt
+python scripts/download_weights.py
+python scripts/run_experiments.py --speed     # all tables and figures in this report
+python scripts/export_pdf.py                  # this PDF
+pytest -q
+</code></pre>
+<hr />
+<h2 id="references">References</h2>
+<ol>
+<li>E. Reinhard, M. Ashikhmin, B. Gooch, P. Shirley. <em>Color transfer between images.</em> IEEE Computer Graphics and Applications, 21(5):34–41, 2001.</li>
+<li>L. A. Gatys, A. S. Ecker, M. Bethge. <em>Image style transfer using convolutional neural networks.</em> CVPR, 2016.</li>
+<li>X. Huang, S. Belongie. <em>Arbitrary style transfer in real-time with adaptive instance normalization.</em> ICCV, 2017.</li>
+<li>J. Johnson, A. Alahi, L. Fei-Fei. <em>Perceptual losses for real-time style transfer and super-resolution.</em> ECCV, 2016.</li>
+<li>F. Luan, S. Paris, E. Shechtman, K. Bala. <em>Deep photo style transfer.</em> CVPR, 2017.</li>
+<li>Y. Li, M.-Y. Liu, X. Li, M.-H. Yang, J. Kautz. <em>A closed-form solution to photorealistic image stylization.</em> ECCV, 2018.</li>
+<li>K. He, J. Sun, X. Tang. <em>Guided image filtering.</em> IEEE TPAMI, 35(6):1397–1409, 2013 (ECCV 2010).</li>
+<li>K. Simonyan, A. Zisserman. <em>Very deep convolutional networks for large-scale image recognition.</em> ICLR, 2015.</li>
+<li>Z. Wang, A. C. Bovik, H. R. Sheikh, E. P. Simoncelli. <em>Image quality assessment: from error visibility to structural similarity.</em> IEEE TIP, 13(4):600–612, 2004.</li>
+<li>R. Zhang, P. Isola, A. A. Efros, E. Shechtman, O. Wang. <em>The unreasonable effectiveness of deep features as a perceptual metric.</em> CVPR, 2018.</li>
+<li>A. Radford et al. <em>Learning transferable visual models from natural language supervision.</em> ICML, 2021.</li>
+<li>M. Cherti et al. <em>Reproducible scaling laws for contrastive language-image learning.</em> CVPR, 2023.</li>
+<li>L.-C. Chen, G. Papandreou, F. Schroff, H. Adam. <em>Rethinking atrous convolution for semantic image segmentation.</em> arXiv:1706.05587, 2017.</li>
+<li>A. Howard et al. <em>Searching for MobileNetV3.</em> ICCV, 2019.</li>
+<li>C. Tomasi, R. Manduchi. <em>Bilateral filtering for gray and color images.</em> ICCV, 1998.</li>
+<li>R. C. Gonzalez, R. E. Woods. <em>Digital Image Processing</em>, 4th ed. Pearson, 2018.</li>
+<li>C. S. McCamy. <em>Correlated color temperature as an explicit function of chromaticity coordinates.</em> Color Research &amp; Application, 17(2):142–144, 1992.</li>
+<li>D. Hasler, S. Süsstrunk. <em>Measuring colourfulness in natural images.</em> Proc. SPIE 5007, Human Vision and Electronic Imaging VIII, 2003.</li>
+<li>Y. Li, N. Wang, J. Liu, X. Hou. <em>Demystifying neural style transfer.</em> IJCAI, 2017.</li>
+<li>D. Ulyanov, A. Vedaldi, V. Lempitsky. <em>Instance normalization: the missing ingredient for fast stylization.</em> arXiv:1607.08022, 2016.</li>
+<li>T.-Y. Lin et al. <em>Microsoft COCO: Common objects in context.</em> ECCV, 2014.</li>
+<li>F. Pitié, A. Kokaram, R. Dahyot. <em>N-dimensional probability density function transfer and its application to colour transfer.</em> ICCV, 2005.</li>
+<li>M. Everingham, L. Van Gool, C. K. I. Williams, J. Winn, A. Zisserman. <em>The PASCAL Visual Object Classes (VOC) challenge.</em> IJCV, 88(2):303–338, 2010.</li>
+<li>D. C. Liu, J. Nocedal. <em>On the limited memory BFGS method for large scale optimization.</em> Mathematical Programming, 45:503–528, 1989.</li>
+<li>J. Yoo, Y. Uh, S. Chun, B. Kang, J.-W. Ha. <em>Photorealistic style transfer via wavelet transforms.</em> ICCV, 2019.</li>
+</ol></body></html>

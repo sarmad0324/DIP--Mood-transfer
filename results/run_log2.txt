@@ -1,0 +1,48 @@
+15:39:41 | INFO | device=mps size=512
+15:39:41 | INFO | 10 contents × 6 moods
+15:39:42 | INFO | Parsing model identifier. Schema: None, Identifier: ViT-B-32
+15:39:42 | INFO | Loaded built-in ViT-B-32 model config.
+15:39:43 | INFO | HTTP Request: HEAD https://huggingface.co/laion/CLIP-ViT-B-32-laion2B-s34B-b79K/resolve/main/open_clip_model.safetensors "HTTP/1.1 302 Found"
+15:39:43 | INFO | Instantiating model architecture: CLIP
+15:39:44 | INFO | Loading full pretrained weights from: /Users/sarmadirfan/Desktop/DIP/mood-transfer/weights/clip/models--laion--CLIP-ViT-B-32-laion2B-s34B-b79K/snapshots/1a25a446712ba5ee05982a381eed697ef9b435cf/open_clip_model.safetensors
+15:39:44 | INFO | Final image preprocessing configuration set: {'size': (224, 224), 'mode': 'RGB', 'mean': (0.48145466, 0.4578275, 0.40821073), 'std': (0.26862954, 0.26130258, 0.27577711), 'interpolation': 'bicubic', 'resize_mode': 'shortest', 'fill_color': 0}
+15:39:44 | INFO | Model ViT-B-32 creation process complete.
+15:39:45 | INFO | Parsing tokenizer identifier. Schema: None, Identifier: ViT-B-32
+15:39:45 | INFO | Attempting to load config from built-in: ViT-B-32
+15:39:45 | INFO | Using default SimpleTokenizer.
+15:39:45 | INFO | Loaded AdaIN encoder/decoder on mps in 0.1s
+experiments:   0%|          | 0/60 [00:00<?, ?it/s]/Users/sarmadirfan/Desktop/DIP/mood-transfer/.venv/lib/python3.13/site-packages/torchvision/models/_utils.py:207: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/Users/sarmadirfan/Desktop/DIP/mood-transfer/.venv/lib/python3.13/site-packages/torchvision/models/_utils.py:222: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=AlexNet_Weights.IMAGENET1K_V1`. You can also use `weights=AlexNet_Weights.DEFAULT` to get the most up-to-date weights.
+  warnings.warn(msg)
+experiments:   2%|▏         | 1/60 [00:00<00:28,  2.04it/s]experiments:   3%|▎         | 2/60 [00:00<00:20,  2.77it/s]experiments:   5%|▌         | 3/60 [00:01<00:17,  3.24it/s]experiments:   7%|▋         | 4/60 [00:01<00:15,  3.58it/s]experiments:   8%|▊         | 5/60 [00:01<00:14,  3.74it/s]experiments:  10%|█         | 6/60 [00:01<00:14,  3.83it/s]experiments:  12%|█▏        | 7/60 [00:01<00:13,  3.87it/s]experiments:  13%|█▎        | 8/60 [00:02<00:13,  3.97it/s]experiments:  15%|█▌        | 9/60 [00:02<00:13,  3.80it/s]experiments:  17%|█▋        | 10/60 [00:02<00:12,  3.97it/s]experiments:  18%|█▊        | 11/60 [00:02<00:12,  4.03it/s]experiments:  20%|██        | 12/60 [00:03<00:11,  4.11it/s]experiments:  22%|██▏       | 13/60 [00:03<00:11,  4.03it/s]experiments:  23%|██▎       | 14/60 [00:03<00:11,  4.02it/s]experiments:  25%|██▌       | 15/60 [00:03<00:11,  4.08it/s]experiments:  27%|██▋       | 16/60 [00:04<00:10,  4.06it/s]experiments:  28%|██▊       | 17/60 [00:04<00:10,  4.11it/s]experiments:  30%|███       | 18/60 [00:04<00:10,  4.10it/s]experiments:  32%|███▏      | 19/60 [00:04<00:09,  4.15it/s]experiments:  33%|███▎      | 20/60 [00:05<00:09,  4.25it/s]experiments:  35%|███▌      | 21/60 [00:05<00:09,  4.27it/s]experiments:  37%|███▋      | 22/60 [00:05<00:08,  4.32it/s]experiments:  38%|███▊      | 23/60 [00:05<00:08,  4.26it/s]experiments:  40%|████      | 24/60 [00:06<00:08,  4.33it/s]experiments:  42%|████▏     | 25/60 [00:06<00:08,  4.17it/s]experiments:  43%|████▎     | 26/60 [00:06<00:08,  4.16it/s]experiments:  45%|████▌     | 27/60 [00:06<00:07,  4.16it/s]experiments:  47%|████▋     | 28/60 [00:07<00:07,  4.13it/s]experiments:  48%|████▊     | 29/60 [00:07<00:07,  4.16it/s]experiments:  50%|█████     | 30/60 [00:07<00:07,  4.15it/s]experiments:  52%|█████▏    | 31/60 [00:07<00:07,  3.99it/s]experiments:  53%|█████▎    | 32/60 [00:08<00:06,  4.01it/s]experiments:  55%|█████▌    | 33/60 [00:08<00:06,  4.03it/s]experiments:  57%|█████▋    | 34/60 [00:08<00:06,  4.08it/s]experiments:  58%|█████▊    | 35/60 [00:08<00:06,  4.07it/s]experiments:  60%|██████    | 36/60 [00:09<00:05,  4.06it/s]experiments:  62%|██████▏   | 37/60 [00:09<00:05,  4.10it/s]experiments:  63%|██████▎   | 38/60 [00:09<00:05,  4.17it/s]experiments:  65%|██████▌   | 39/60 [00:09<00:04,  4.23it/s]experiments:  67%|██████▋   | 40/60 [00:09<00:04,  4.30it/s]experiments:  68%|██████▊   | 41/60 [00:10<00:04,  4.31it/s]experiments:  70%|███████   | 42/60 [00:10<00:04,  4.19it/s]experiments:  72%|███████▏  | 43/60 [00:10<00:05,  3.21it/s]experiments:  73%|███████▎  | 44/60 [00:11<00:05,  2.86it/s]experiments:  75%|███████▌  | 45/60 [00:11<00:05,  2.89it/s]experiments:  77%|███████▋  | 46/60 [00:11<00:04,  3.08it/s]experiments:  78%|███████▊  | 47/60 [00:12<00:03,  3.33it/s]experiments:  80%|████████  | 48/60 [00:12<00:03,  3.47it/s]experiments:  82%|████████▏ | 49/60 [00:12<00:03,  3.53it/s]experiments:  83%|████████▎ | 50/60 [00:13<00:02,  3.60it/s]experiments:  85%|████████▌ | 51/60 [00:13<00:02,  3.72it/s]experiments:  87%|████████▋ | 52/60 [00:13<00:02,  3.81it/s]experiments:  88%|████████▊ | 53/60 [00:13<00:01,  3.92it/s]experiments:  90%|█████████ | 54/60 [00:13<00:01,  3.96it/s]experiments:  92%|█████████▏| 55/60 [00:14<00:01,  3.82it/s]experiments:  93%|█████████▎| 56/60 [00:14<00:01,  3.93it/s]experiments:  95%|█████████▌| 57/60 [00:14<00:00,  4.01it/s]experiments:  97%|█████████▋| 58/60 [00:14<00:00,  4.10it/s]experiments:  98%|█████████▊| 59/60 [00:15<00:00,  4.09it/s]experiments: 100%|██████████| 60/60 [00:15<00:00,  4.13it/s]experiments: 100%|██████████| 60/60 [00:15<00:00,  3.88it/s]
+15:40:01 | INFO | wrote results/metrics.csv (378 rows)
+15:40:01 | INFO | wrote results/metrics_summary.csv/.md
+15:40:01 | INFO | figure: results/figures/metrics_summary.png
+15:40:01 | INFO | figure: results/figures/tradeoff_scatter.png
+15:40:01 | INFO | speed cpu reinhard: 0.010s
+15:40:02 | INFO | speed cpu hist: 0.042s
+15:40:02 | INFO | Loaded AdaIN encoder/decoder on cpu in 0.1s
+15:40:04 | INFO | speed cpu adain: 0.546s
+15:40:05 | INFO | speed cpu adain_mood: 0.391s
+15:40:06 | INFO | speed cpu adain_mood_ct: 0.401s
+15:43:00 | INFO | speed cpu gatys: 57.859s
+15:43:01 | INFO | speed mps reinhard: 0.011s
+15:43:01 | INFO | speed mps hist: 0.042s
+15:43:01 | INFO | speed mps adain: 0.091s
+15:43:02 | INFO | speed mps adain_mood: 0.103s
+15:43:02 | INFO | speed mps adain_mood_ct: 0.117s
+15:44:05 | INFO | speed mps gatys: 20.555s
+15:44:06 | INFO | figure: results/figures/qualitative_grid.png
+15:44:07 | INFO | figure: results/figures/alpha_sweep.png
+15:44:08 | INFO | figure: results/figures/transfer_modes.png
+15:44:08 | INFO | figure: results/figures/refinement_before_after.png
+15:44:09 | INFO | figure: results/figures/multi_reference_blending.png
+15:44:09 | INFO | figure: results/figures/mood_presets_descriptors.png
+15:44:09 | INFO | figure: results/figures/post_processing.png
+15:44:10 | INFO | figure: results/figures/failure_cases.png
+15:44:11 | INFO | figure: results/figures/semantic_transfer.png
+15:44:12 | INFO | figure: results/figures/guided_filter_ablation.png
+15:44:12 | INFO | figure: results/figures/architecture_adain_mood.png
+15:44:13 | INFO | figure: results/figures/architecture_gatys.png
+15:44:13 | INFO | done.

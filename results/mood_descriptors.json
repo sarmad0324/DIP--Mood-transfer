@@ -1,0 +1,140 @@
+{
+  "blue_dusk": {
+    "label": "cool, mid-key, vivid",
+    "brightness": 0.459,
+    "contrast": 0.158,
+    "saturation": 0.54,
+    "colorfulness": 53.1,
+    "cct_K": 25000,
+    "warmth": -29.98,
+    "palette_hex": [
+      "#2a569a",
+      "#7f9ad8",
+      "#586ca2",
+      "#30395a",
+      "#82707a"
+    ],
+    "palette_share": [
+      0.342,
+      0.308,
+      0.202,
+      0.12,
+      0.028
+    ]
+  },
+  "dark_noir": {
+    "label": "neutral, dark, desaturated",
+    "brightness": 0.126,
+    "contrast": 0.216,
+    "saturation": 0.0,
+    "colorfulness": 0.0,
+    "cct_K": 6504,
+    "warmth": 0.01,
+    "palette_hex": [
+      "#060606",
+      "#252525",
+      "#838383",
+      "#505050",
+      "#b0b0b0"
+    ],
+    "palette_share": [
+      0.728,
+      0.083,
+      0.069,
+      0.06,
+      0.06
+    ]
+  },
+  "foggy": {
+    "label": "neutral, mid-key, desaturated, low-contrast",
+    "brightness": 0.534,
+    "contrast": 0.138,
+    "saturation": 0.057,
+    "colorfulness": 7.0,
+    "cct_K": 6445,
+    "warmth": 0.78,
+    "palette_hex": [
+      "#6e726d",
+      "#868b87",
+      "#4a514a",
+      "#a3a5a3",
+      "#cececb"
+    ],
+    "palette_share": [
+      0.329,
+      0.263,
+      0.172,
+      0.17,
+      0.066
+    ]
+  },
+  "golden_hour": {
+    "label": "warm, mid-key, vivid",
+    "brightness": 0.572,
+    "contrast": 0.242,
+    "saturation": 0.858,
+    "colorfulness": 101.0,
+    "cct_K": 2661,
+    "warmth": 66.32,
+    "palette_hex": [
+      "#e78a1c",
+      "#9b4c0a",
+      "#feda4d",
+      "#3e1709",
+      "#fffddd"
+    ],
+    "palette_share": [
+      0.483,
+      0.214,
+      0.145,
+      0.139,
+      0.02
+    ]
+  },
+  "neon_night": {
+    "label": "magenta, mid-key, vivid",
+    "brightness": 0.352,
+    "contrast": 0.198,
+    "saturation": 0.612,
+    "colorfulness": 80.9,
+    "cct_K": 4190,
+    "warmth": 3.33,
+    "palette_hex": [
+      "#461f4a",
+      "#af478d",
+      "#9b4a50",
+      "#662ea7",
+      "#e5d5d4"
+    ],
+    "palette_share": [
+      0.402,
+      0.233,
+      0.22,
+      0.097,
+      0.048
+    ]
+  },
+  "vintage_film": {
+    "label": "neutral, mid-key, muted, high-contrast",
+    "brightness": 0.498,
+    "contrast": 0.358,
+    "saturation": 0.203,
+    "colorfulness": 43.5,
+    "cct_K": 6080,
+    "warmth": 6.45,
+    "palette_hex": [
+      "#302825",
+      "#f9f8f9",
+      "#6c666a",
+      "#a23826",
+      "#a58341"
+    ],
+    "palette_share": [
+      0.396,
+      0.306,
+      0.208,
+      0.048,
+      0.042
+    ]
+  }
+}

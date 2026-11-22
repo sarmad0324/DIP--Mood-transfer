@@ -1,0 +1,21 @@
+{
+  "qualitative_pairs": [["arezzo_piazza", "golden_hour"], ["autumn_hills", "blue_dusk"],
+                        ["caesars_palace", "neon_night"], ["arezzo_piazza", "foggy"],
+                        ["autumn_hills", "vintage_film"]],
+  "alpha_pair": ["lucca_rooftops", "golden_hour"],
+  "modes_pair": ["niagara_falls", "dark_noir"],
+  "refine_pair": ["tuscan_vineyard", "neon_night"],
+  "refine_crop": [0.45, 0.55, 0.45],
+  "blend": ["arezzo_piazza", "golden_hour", "blue_dusk"],
+  "post_pair": ["lucca_rooftops", "vintage_film"],
+  "semantic": ["data/extra/astronaut.jpg", "blue_dusk", "golden_hour"],
+  "gf_ablation": [["tuscan_vineyard", "neon_night"], ["tuscan_vineyard", "vintage_film"],
+                  ["arezzo_piazza", "neon_night"], ["las_vegas_street", "golden_hour"]],
+  "failures": [
+    ["Hist-match (RGB): colour cast / over-saturation", "city_skyline", "neon_night", "hist_rgb"],
+    ["Plain AdaIN: texture leakage, warped edges", "caesars_palace", "golden_hour", "adain"],
+    ["Reinhard: scene mismatch (neon colours spread everywhere)", "forest_lake", "neon_night", "reinhard"],
+    ["Over-smoothed guided filter (r=96, ε=0.2): colour halos", "las_vegas_street", "golden_hour", "big_radius"],
+    ["Ours (AdaIN+mood): residual colour blob on cypress", "tuscan_vineyard", "neon_night", "adain_mood"]
+  ]
+}

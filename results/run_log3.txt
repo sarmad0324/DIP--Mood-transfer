@@ -1,0 +1,19 @@
+15:45:03 | INFO | device=mps size=512
+15:45:03 | INFO | 10 contents × 6 moods
+15:45:03 | INFO | wrote results/metrics_summary.csv/.md
+15:45:03 | INFO | figure: results/figures/metrics_summary.png
+15:45:03 | INFO | figure: results/figures/tradeoff_scatter.png
+15:45:04 | INFO | figure: results/figures/qualitative_grid.png
+15:45:04 | INFO | Loaded AdaIN encoder/decoder on mps in 0.1s
+15:45:05 | INFO | figure: results/figures/alpha_sweep.png
+15:45:06 | INFO | figure: results/figures/transfer_modes.png
+15:45:06 | INFO | figure: results/figures/refinement_before_after.png
+15:45:07 | INFO | figure: results/figures/multi_reference_blending.png
+15:45:07 | INFO | figure: results/figures/mood_presets_descriptors.png
+15:45:07 | INFO | figure: results/figures/post_processing.png
+15:45:08 | INFO | figure: results/figures/failure_cases.png
+15:45:09 | INFO | figure: results/figures/semantic_transfer.png
+15:45:11 | INFO | figure: results/figures/guided_filter_ablation.png
+15:45:11 | INFO | figure: results/figures/architecture_adain_mood.png
+15:45:11 | INFO | figure: results/figures/architecture_gatys.png
+15:45:11 | INFO | done.
